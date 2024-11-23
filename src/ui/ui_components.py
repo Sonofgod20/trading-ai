@@ -4,6 +4,10 @@ from typing import Dict, Optional
 from src.trading.analysis_parser import AnalysisParser
 from datetime import datetime, timedelta
 from src.analysis.market_data.market_analyzer import MarketAnalyzer
+from src.analysis.prompt.prompt_formatter import MarketAnalysisPromptFormatter
+from src.database.chat_history_manager import ChatHistoryManager
+import asyncio
+import uuid
 
 def format_price(price: float) -> str:
     """Format price with appropriate decimal places"""
@@ -110,52 +114,73 @@ def display_order_book(market_analyzer, symbol: str):
     return order_book
 
 def format_order_book_context(order_book: Dict) -> str:
-    """Format order book data for AI context"""
+    """Format raw order book data for AI context"""
     if not order_book:
         return ""
     
-    context = "\nOrder Book Analysis:\n"
-    context += f"- Buy Pressure: {order_book['buy_pressure']:.1f}%\n"
-    context += f"- Sell Pressure: {order_book['sell_pressure']:.1f}%\n"
-    context += f"- Market Spread: {order_book['spread_percentage']:.4f}%\n"
+    # Get raw bids and asks from the order book data
+    bids = order_book.get('bids', [])
+    asks = order_book.get('asks', [])
     
-    if order_book['bid_walls']:
-        context += "\nBuy Walls:\n"
-        for wall in order_book['bid_walls']:
-            context += f"- Price: {format_price(wall['price'])} | Volume: {wall['quantity']:,.2f}\n"
+    context = "\nOrder Book Raw Data:\n"
     
-    if order_book['ask_walls']:
-        context += "\nSell Walls:\n"
-        for wall in order_book['ask_walls']:
-            context += f"- Price: {format_price(wall['price'])} | Volume: {wall['quantity']:,.2f}\n"
+    # Add raw bid data
+    context += "\nBids (Buy Orders):\n"
+    for bid in bids[:20]:  # Limit to 20 levels
+        context += f"- Price: {format_price(bid['price'])} | Quantity: {bid['quantity']:.8f}\n"
     
-    context += "\nLiquidity Zones:\n"
-    context += "Buy Zones:\n"
-    for zone in order_book['liquidity_zones']['bids']:
-        context += f"- Range: {format_price(zone['start_price'])} - {format_price(zone['end_price'])}\n"
+    # Add raw ask data
+    context += "\nAsks (Sell Orders):\n"
+    for ask in asks[:20]:  # Limit to 20 levels
+        context += f"- Price: {format_price(ask['price'])} | Quantity: {ask['quantity']:.8f}\n"
     
-    context += "Sell Zones:\n"
-    for zone in order_book['liquidity_zones']['asks']:
-        context += f"- Range: {format_price(zone['start_price'])} - {format_price(zone['end_price'])}\n"
+    # Add basic spread information
+    if bids and asks:
+        best_bid = bids[0]['price']
+        best_ask = asks[0]['price']
+        spread = best_ask - best_bid
+        spread_percent = (spread / best_bid) * 100
+        context += f"\nCurrent Spread: {format_price(spread)} ({spread_percent:.4f}%)\n"
     
     return context
+
+async def get_market_data(prompt_formatter, market_data: Dict, symbol: str) -> pd.DataFrame:
+    """Get formatted market data"""
+    try:
+        # Convert market_data to DataFrame if it's not already
+        if not isinstance(market_data, pd.DataFrame):
+            market_data = pd.DataFrame(market_data)
+        
+        return await prompt_formatter.format_market_data(market_data, symbol)
+    except Exception as e:
+        print(f"Error getting market data: {str(e)}")
+        return pd.DataFrame(market_data)
 
 def display_realtime_chat(market_data: Dict, analysis_service):
     """Display real-time chat interface with market data context"""
     try:
-        # Initialize chat history and states in session state if not exists
-        if 'chat_history' not in st.session_state:
-            st.session_state.chat_history = []
+        # Initialize chat history manager if not exists
+        if 'chat_manager' not in st.session_state:
+            st.session_state.chat_manager = ChatHistoryManager()
+            
+        # Initialize states
         if 'analysis_mode' not in st.session_state:
             st.session_state.analysis_mode = "real-time"
         if 'historical_data' not in st.session_state:
             st.session_state.historical_data = None
+        if 'prompt_formatter' not in st.session_state:
+            st.session_state.prompt_formatter = MarketAnalysisPromptFormatter()
+        if 'conversation_id' not in st.session_state:
+            st.session_state.conversation_id = str(uuid.uuid4())
 
         # Get symbol from market data
-        if 'symbol' in market_data.columns:
-            symbol = market_data['symbol'].iloc[0]
+        if isinstance(market_data, pd.DataFrame):
+            if 'symbol' in market_data.columns:
+                symbol = market_data['symbol'].iloc[0]
+            else:
+                symbol = market_data.index.get_level_values('symbol')[0] if 'symbol' in market_data.index.names else "BTCUSDT"
         else:
-            symbol = market_data.index.get_level_values('symbol')[0] if 'symbol' in market_data.index.names else "BTCUSDT"
+            symbol = market_data.get('symbol', "BTCUSDT")
 
         # Create market context string with improved formatting
         mark_price = float(market_data['mark_price'].iloc[-1])
@@ -165,11 +190,13 @@ def display_realtime_chat(market_data: Dict, analysis_service):
         volume = float(market_data['quote_volume'].sum())
         
         market_context = f"""
-Current Market Data:
-- Mark Price: {format_price(mark_price)} (Primary Reference)
-- Current Price: {format_price(current_price)} ({price_change:.2f}%)
-- Funding Rate: {funding_rate:.4f}%
-- 24h Volume: {format_price(volume)}
+Real Time Market Data (Use it when necessary):
+
+Current Market Data for {symbol}:
+    Mark Price: {format_price(mark_price)} (Primary Reference)
+    Current Price: {format_price(current_price)} ({price_change:.2f}%)
+    Funding Rate: {funding_rate:.4f}%
+    24h Volume: {format_price(volume)}
 """
         # Display chat interface with mode indicator
         col1, col2 = st.columns([3, 1])
@@ -179,12 +206,16 @@ Current Market Data:
             if st.session_state.analysis_mode == "historical":
                 st.info("📈 Historical Analysis Mode (1 Year)", icon="📊")
         
-        # Display chat history
-        for message in st.session_state.chat_history:
+        # Load and display chat history from MongoDB for current conversation
+        chat_history = st.session_state.chat_manager.get_chat_history(
+            symbol=symbol,
+            conversation_id=st.session_state.conversation_id
+        )
+        for message in chat_history:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
 
-        # Chat input - Streamlit will automatically keep it fixed at the bottom
+        # Chat input
         if prompt := st.chat_input("Ask about market conditions or trading strategies..."):
             # Check for historical analysis keywords
             historical_keywords = ['historical', 'history', 'past', 'previous', 'performance', 'backtest']
@@ -204,15 +235,32 @@ Current Market Data:
                 st.session_state.analysis_mode = "real-time"
                 st.session_state.historical_data = None
             
-            # Add user message to chat history
-            st.session_state.chat_history.append({"role": "user", "content": prompt})
+            # Save and display user message
+            st.session_state.chat_manager.save_message(
+                role="user",
+                content=prompt,
+                symbol=symbol,
+                conversation_id=st.session_state.conversation_id,
+                metadata={'mode': st.session_state.analysis_mode}
+            )
             
-            # Display user message
             with st.chat_message("user"):
                 st.markdown(prompt)
 
-            # Prepare AI context with market data
-            ai_context = market_context
+            # Get market data
+            try:
+                with st.spinner("Getting market data..."):
+                    formatted_data = asyncio.run(get_market_data(
+                        st.session_state.prompt_formatter,
+                        market_data,
+                        symbol
+                    ))
+                    
+                    # Create AI context
+                    ai_context = market_context
+            except Exception as e:
+                print(f"Error getting market data: {str(e)}")
+                ai_context = market_context
             
             # Add order book context if available
             if 'order_book_data' in st.session_state and st.session_state.order_book_data:
@@ -230,13 +278,13 @@ Current Market Data:
                 
                 historical_context = f"""
 Historical Data Analysis (1 Year):
-- Yearly High: {format_price(year_high)}
-- Yearly Low: {format_price(year_low)}
-- Year Open: {format_price(year_open)}
-- Year Close: {format_price(year_close)}
-- Year Change: {year_change:.2f}%
+    Yearly High: {format_price(year_high)}
+    Yearly Low: {format_price(year_low)}
+    Year Open: {format_price(year_open)}
+    Year Close: {format_price(year_close)}
+    Year Change: {year_change:.2f}%
 """
-                ai_context = f"{historical_context}\n{market_context}"
+                ai_context = f"{historical_context}\n{ai_context}"
             
             ai_context += f"\nUser Question: {prompt}"
             
@@ -245,18 +293,20 @@ Historical Data Analysis (1 Year):
                 with st.spinner("🤖 AI is analyzing the market..."):
                     response = analysis_service.chat(
                         messages=[{"role": "user", "content": ai_context}],
-                        system_prompt="""You are a real-time trading assistant with access to current market data. 
-                        Analyze the provided market context and answer questions about trading opportunities, 
-                        market conditions, and potential strategies. Be precise and data-driven in your responses.
-                        Always reference Mark Price as the primary price indicator for your analysis.
-                        When order book data is available, use it to identify key support/resistance levels,
-                        market depth, and potential price action based on buy/sell walls and liquidity zones."""
+                        system_prompt="""""",
+                        conversation_id=st.session_state.conversation_id,
+                        symbol=symbol
                     )
                 
-                # Add AI response to chat history
-                st.session_state.chat_history.append({"role": "assistant", "content": response})
+                # Save and display AI response
+                st.session_state.chat_manager.save_message(
+                    role="assistant",
+                    content=response,
+                    symbol=symbol,
+                    conversation_id=st.session_state.conversation_id,
+                    metadata={'mode': st.session_state.analysis_mode}
+                )
                 
-                # Display AI response
                 with st.chat_message("assistant"):
                     st.markdown(response)
                 

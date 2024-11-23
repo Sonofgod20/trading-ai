@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import base64
 import io
+import asyncio
 
 # Load environment variables
 load_dotenv()

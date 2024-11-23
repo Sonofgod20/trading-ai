@@ -104,16 +104,16 @@ class MarketAnalyzer:
 
     def analyze_order_book_depth(self, symbol: str, levels: int = 20) -> Dict[str, Union[float, Dict]]:
         """
-        Perform deep order book analysis
+        Get raw order book data
         Args:
             symbol: Trading pair symbol
-            levels: Number of price levels to analyze
+            levels: Number of price levels to get (default: 20)
         Returns:
-            Dictionary containing order book analysis
+            Dictionary containing raw order book data
         """
         try:
-            print(f"Analyzing order book for {symbol}...")
-            # Get order book data
+            print(f"Getting order book for {symbol}...")
+            # Get raw order book data
             depth = self.client._make_request('depth', params={
                 'symbol': symbol,
                 'limit': levels
@@ -123,118 +123,35 @@ class MarketAnalyzer:
                 print(f"Warning: Invalid order book data received for {symbol}")
                 return None
             
-            # Convert to DataFrames
-            bids_df = pd.DataFrame(depth['bids'], columns=['price', 'quantity'], dtype=float)
-            asks_df = pd.DataFrame(depth['asks'], columns=['price', 'quantity'], dtype=float)
+            # Convert string values to float
+            bids = [{'price': float(price), 'quantity': float(qty)} 
+                   for price, qty in depth['bids']]
+            asks = [{'price': float(price), 'quantity': float(qty)} 
+                   for price, qty in depth['asks']]
             
-            if bids_df.empty or asks_df.empty:
-                print(f"Warning: Empty order book data for {symbol}")
-                return None
+            # Calculate basic spread info for UI display
+            best_bid = float(depth['bids'][0][0])
+            best_ask = float(depth['asks'][0][0])
+            spread = best_ask - best_bid
+            spread_percentage = (spread / best_bid) * 100
             
-            # Calculate cumulative volumes
-            bids_df['cumulative_volume'] = bids_df['quantity'].cumsum()
-            asks_df['cumulative_volume'] = asks_df['quantity'].cumsum()
-            
-            # Calculate price levels metrics
-            mid_price = (float(bids_df['price'].iloc[0]) + float(asks_df['price'].iloc[0])) / 2
-            spread = float(asks_df['price'].iloc[0]) - float(bids_df['price'].iloc[0])
-            spread_percentage = (spread / mid_price) * 100
-            
-            # Analyze order imbalance
-            bid_volume = bids_df['quantity'].sum()
-            ask_volume = asks_df['quantity'].sum()
-            total_volume = bid_volume + ask_volume
-            bid_ask_ratio = bid_volume / ask_volume if ask_volume > 0 else float('inf')
-            
-            # Find significant levels (walls)
-            bid_walls = []
-            ask_walls = []
-            
-            # Define volume threshold for walls (e.g., 2x average volume)
-            avg_bid_volume = bids_df['quantity'].mean()
-            avg_ask_volume = asks_df['quantity'].mean()
-            
-            for _, row in bids_df.iterrows():
-                if row['quantity'] > avg_bid_volume * 2:
-                    bid_walls.append({
-                        'price': float(row['price']),
-                        'quantity': float(row['quantity'])
-                    })
-            
-            for _, row in asks_df.iterrows():
-                if row['quantity'] > avg_ask_volume * 2:
-                    ask_walls.append({
-                        'price': float(row['price']),
-                        'quantity': float(row['quantity'])
-                    })
-            
-            # Calculate liquidity zones
-            bid_liquidity_zones = self._identify_liquidity_zones(bids_df)
-            ask_liquidity_zones = self._identify_liquidity_zones(asks_df)
-            
+            # Return raw data with minimal processing
             return {
-                'mid_price': mid_price,
-                'spread': spread,
+                'bids': bids,
+                'asks': asks,
                 'spread_percentage': spread_percentage,
-                'bid_ask_ratio': bid_ask_ratio,
-                'bid_volume': float(bid_volume),
-                'ask_volume': float(ask_volume),
-                'total_volume': float(total_volume),
-                'buy_pressure': (bid_volume / total_volume) * 100 if total_volume > 0 else 50,
-                'sell_pressure': (ask_volume / total_volume) * 100 if total_volume > 0 else 50,
-                'bid_walls': bid_walls,
-                'ask_walls': ask_walls,
-                'liquidity_zones': {
-                    'bids': bid_liquidity_zones,
-                    'asks': ask_liquidity_zones
-                }
+                # Keep these for UI display only
+                'buy_pressure': 50.0,  # Neutral default
+                'sell_pressure': 50.0,  # Neutral default
+                'bid_walls': [],
+                'ask_walls': [],
+                'liquidity_zones': {'bids': [], 'asks': []}
             }
+            
         except Exception as e:
             print(f"Error analyzing order book: {str(e)}")
             print(f"Traceback: {traceback.format_exc()}")
             return None
-
-    def _identify_liquidity_zones(self, df: pd.DataFrame, 
-                                volume_threshold: float = 0.1) -> List[Dict]:
-        """
-        Identify liquidity zones in order book
-        Args:
-            df: Order book DataFrame
-            volume_threshold: Minimum volume ratio to consider as liquidity zone
-        Returns:
-            List of liquidity zones
-        """
-        try:
-            if df.empty:
-                return []
-
-            total_volume = df['quantity'].sum()
-            if total_volume == 0:
-                return []
-
-            threshold_volume = total_volume * volume_threshold
-            zones = []
-            
-            current_zone = {
-                'start_price': float(df['price'].iloc[0]),
-                'volume': 0
-            }
-            
-            for _, row in df.iterrows():
-                current_zone['volume'] += float(row['quantity'])
-                
-                if current_zone['volume'] >= threshold_volume:
-                    current_zone['end_price'] = float(row['price'])
-                    zones.append(current_zone.copy())
-                    current_zone = {
-                        'start_price': float(row['price']),
-                        'volume': 0
-                    }
-            
-            return zones
-        except Exception as e:
-            print(f"Error identifying liquidity zones: {str(e)}")
-            return []
 
     def analyze_volume_profile(self, symbol: str, timeframes: Optional[List[str]] = None,
                              num_bins: int = 50) -> Dict[str, Dict]:
@@ -348,92 +265,3 @@ class MarketAnalyzer:
             'value_area_low': 0.0,
             'total_volume': 0.0
         }
-
-    def get_market_sentiment(self, symbol: str) -> Dict[str, Union[float, str]]:
-        """
-        Calculate overall market sentiment
-        Args:
-            symbol: Trading pair symbol
-        Returns:
-            Dictionary containing sentiment metrics
-        """
-        try:
-            print(f"Calculating market sentiment for {symbol}...")
-            # Get data from cache or API
-            data = self.get_multi_timeframe_data(symbol, ['1h', '4h', '1d'])
-            
-            if not data:
-                print(f"Warning: No data available for market sentiment analysis of {symbol}")
-                return None
-            
-            # Get order book analysis
-            order_book = self.analyze_order_book_depth(symbol)
-            
-            if not order_book:
-                print(f"Warning: No order book data available for {symbol}")
-                return None
-            
-            # Calculate sentiment metrics
-            sentiment_scores = {}
-            
-            for tf, df in data.items():
-                try:
-                    # Price trend
-                    price_change = (df['close'].iloc[-1] - df['open'].iloc[0]) / df['open'].iloc[0] * 100
-                    
-                    # Volume trend
-                    volume_sma = df['volume'].rolling(window=20).mean()
-                    if volume_sma.iloc[-1] > 0:
-                        volume_trend = (df['volume'].iloc[-1] / volume_sma.iloc[-1]) - 1
-                    else:
-                        volume_trend = 0
-                    
-                    # Combine metrics
-                    sentiment_scores[tf] = {
-                        'price_change': price_change,
-                        'volume_trend': volume_trend
-                    }
-                except Exception as e:
-                    print(f"Error calculating sentiment for {tf}: {str(e)}")
-                    sentiment_scores[tf] = {
-                        'price_change': 0,
-                        'volume_trend': 0
-                    }
-            
-            # Calculate overall sentiment
-            overall_sentiment = 0
-            weights = {'1h': 0.2, '4h': 0.3, '1d': 0.5}
-            
-            for tf, metrics in sentiment_scores.items():
-                score = (
-                    np.sign(metrics['price_change']) * 
-                    (1 + abs(metrics['volume_trend']))
-                )
-                overall_sentiment += score * weights.get(tf, 0.2)
-            
-            # Add order book sentiment
-            book_sentiment = (order_book['buy_pressure'] - order_book['sell_pressure']) / 100
-            overall_sentiment = (overall_sentiment * 0.7) + (book_sentiment * 0.3)
-            
-            # Classify sentiment
-            sentiment_label = (
-                'Very Bullish' if overall_sentiment > 0.5 else
-                'Bullish' if overall_sentiment > 0.1 else
-                'Neutral' if abs(overall_sentiment) <= 0.1 else
-                'Bearish' if overall_sentiment > -0.5 else
-                'Very Bearish'
-            )
-            
-            return {
-                'overall_score': float(overall_sentiment),
-                'sentiment': sentiment_label,
-                'timeframe_metrics': sentiment_scores,
-                'order_book_pressure': {
-                    'buy_pressure': float(order_book['buy_pressure']),
-                    'sell_pressure': float(order_book['sell_pressure'])
-                }
-            }
-        except Exception as e:
-            print(f"Error calculating market sentiment: {str(e)}")
-            print(f"Traceback: {traceback.format_exc()}")
-            return None

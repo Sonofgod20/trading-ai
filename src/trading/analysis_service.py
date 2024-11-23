@@ -1,6 +1,8 @@
 from typing import Dict, Optional
 import streamlit as st
 import requests
+from src.analysis.prompt.prompt_formatter import MarketAnalysisPromptFormatter
+from src.database.chat_history_manager import ChatHistoryManager
 
 class AnalysisService:
     def __init__(self, binance_client, chatbase_api_key, chatbase_chatbot_id):
@@ -10,13 +12,17 @@ class AnalysisService:
         self.chatbot_id = chatbase_chatbot_id
         self.api_url = 'https://www.chatbase.co/api/v1/chat'
         self.debug_mode = False
+        self.chat_manager = ChatHistoryManager()
+        
+        # Initialize Prompt Formatter
+        self.prompt_formatter = MarketAnalysisPromptFormatter()
 
     def toggle_debug_mode(self):
         """Toggle debug mode to show/hide market data"""
         self.debug_mode = not self.debug_mode
         return self.debug_mode
 
-    def get_market_data(self, symbol: str) -> Optional[Dict]:
+    async def get_market_data(self, symbol: str) -> Optional[Dict]:
         """
         Get real-time market data for a specific trading pair
         Returns:
@@ -57,7 +63,7 @@ class AnalysisService:
             st.error(f"❌ Error fetching market data: {str(e)}")
             return None
 
-    def chat(self, messages: list, system_prompt: str = None) -> Optional[str]:
+    def chat(self, messages: list, system_prompt: str = None, conversation_id: str = None, symbol: str = None) -> Optional[str]:
         """Send a chat message to chatbase API"""
         try:
             if not messages or not isinstance(messages, list) or not messages[-1].get('content'):
@@ -67,13 +73,32 @@ class AnalysisService:
                 'Authorization': f'Bearer {self.api_key}',
                 'Content-Type': 'application/json'
             }
+
+            # Get conversation history if conversation_id is provided
+            if conversation_id and symbol:
+                history = self.chat_manager.get_chat_history(symbol=symbol, conversation_id=conversation_id)
+                # Convert history to chatbase format
+                chat_messages = []
+                for msg in history:
+                    chat_messages.append({
+                        "role": msg["role"],
+                        "content": msg["content"]
+                    })
+                # Add the new message
+                chat_messages.append(messages[-1])
+            else:
+                chat_messages = messages
             
             data = {
-                'messages': messages,
+                'messages': chat_messages,
                 'chatId': self.chatbot_id,
                 'stream': True,
                 'temperature': 0
             }
+
+            # Add conversation ID if provided
+            if conversation_id:
+                data['conversationId'] = conversation_id
 
             if system_prompt:
                 data['systemPrompt'] = system_prompt
