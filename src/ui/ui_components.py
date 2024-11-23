@@ -5,7 +5,6 @@ from src.trading.analysis_parser import AnalysisParser
 from datetime import datetime, timedelta
 from src.analysis.market_data.market_analyzer import MarketAnalyzer
 from src.analysis.prompt.prompt_formatter import MarketAnalysisPromptFormatter
-from src.database.chat_history_manager import ChatHistoryManager
 import asyncio
 import uuid
 
@@ -159,10 +158,6 @@ async def get_market_data(prompt_formatter, market_data: Dict, symbol: str) -> p
 def display_realtime_chat(market_data: Dict, analysis_service):
     """Display real-time chat interface with market data context"""
     try:
-        # Initialize chat history manager if not exists
-        if 'chat_manager' not in st.session_state:
-            st.session_state.chat_manager = ChatHistoryManager()
-            
         # Initialize states
         if 'analysis_mode' not in st.session_state:
             st.session_state.analysis_mode = "real-time"
@@ -172,6 +167,8 @@ def display_realtime_chat(market_data: Dict, analysis_service):
             st.session_state.prompt_formatter = MarketAnalysisPromptFormatter()
         if 'conversation_id' not in st.session_state:
             st.session_state.conversation_id = str(uuid.uuid4())
+        if 'messages' not in st.session_state:
+            st.session_state.messages = []
 
         # Get symbol from market data
         if isinstance(market_data, pd.DataFrame):
@@ -206,12 +203,8 @@ Current Market Data for {symbol}:
             if st.session_state.analysis_mode == "historical":
                 st.info("📈 Historical Analysis Mode (1 Year)", icon="📊")
         
-        # Load and display chat history from MongoDB for current conversation
-        chat_history = st.session_state.chat_manager.get_chat_history(
-            symbol=symbol,
-            conversation_id=st.session_state.conversation_id
-        )
-        for message in chat_history:
+        # Display chat history from session state
+        for message in st.session_state.messages:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
 
@@ -235,14 +228,8 @@ Current Market Data for {symbol}:
                 st.session_state.analysis_mode = "real-time"
                 st.session_state.historical_data = None
             
-            # Save and display user message
-            st.session_state.chat_manager.save_message(
-                role="user",
-                content=prompt,
-                symbol=symbol,
-                conversation_id=st.session_state.conversation_id,
-                metadata={'mode': st.session_state.analysis_mode}
-            )
+            # Add user message to session state
+            st.session_state.messages.append({"role": "user", "content": prompt})
             
             with st.chat_message("user"):
                 st.markdown(prompt)
@@ -298,14 +285,8 @@ Historical Data Analysis (1 Year):
                         symbol=symbol
                     )
                 
-                # Save and display AI response
-                st.session_state.chat_manager.save_message(
-                    role="assistant",
-                    content=response,
-                    symbol=symbol,
-                    conversation_id=st.session_state.conversation_id,
-                    metadata={'mode': st.session_state.analysis_mode}
-                )
+                # Add AI response to session state
+                st.session_state.messages.append({"role": "assistant", "content": response})
                 
                 with st.chat_message("assistant"):
                     st.markdown(response)

@@ -2,7 +2,6 @@ from typing import Dict, Optional
 import streamlit as st
 import requests
 from src.analysis.prompt.prompt_formatter import MarketAnalysisPromptFormatter
-from src.database.chat_history_manager import ChatHistoryManager
 
 class AnalysisService:
     def __init__(self, binance_client, chatbase_api_key, chatbase_chatbot_id):
@@ -12,7 +11,6 @@ class AnalysisService:
         self.chatbot_id = chatbase_chatbot_id
         self.api_url = 'https://www.chatbase.co/api/v1/chat'
         self.debug_mode = False
-        self.chat_manager = ChatHistoryManager()
         
         # Initialize Prompt Formatter
         self.prompt_formatter = MarketAnalysisPromptFormatter()
@@ -74,20 +72,13 @@ class AnalysisService:
                 'Content-Type': 'application/json'
             }
 
-            # Get conversation history if conversation_id is provided
-            if conversation_id and symbol:
-                history = self.chat_manager.get_chat_history(symbol=symbol, conversation_id=conversation_id)
-                # Convert history to chatbase format
-                chat_messages = []
-                for msg in history:
-                    chat_messages.append({
-                        "role": msg["role"],
-                        "content": msg["content"]
-                    })
-                # Add the new message
-                chat_messages.append(messages[-1])
-            else:
-                chat_messages = messages
+            # Get conversation history from session state if available
+            chat_messages = []
+            if conversation_id and symbol and 'messages' in st.session_state:
+                chat_messages.extend(st.session_state.messages)
+            
+            # Add the new message
+            chat_messages.append(messages[-1])
             
             data = {
                 'messages': chat_messages,
