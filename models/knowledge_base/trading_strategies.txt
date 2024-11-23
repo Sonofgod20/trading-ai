@@ -1,0 +1,64 @@
+TRADING STRATEGIES KNOWLEDGE BASE
+
+1. ENTRY SIGNALS
+• Buy at demand zones where buying pressure exceeds selling pressure
+• Enter when price crosses above EMAs (especially 50 and 200 EMA)
+• Look for bullish candlestick patterns (morning star, hammer) at support levels
+• Buy when RSI is oversold and bouncing from support
+• Enter when MACD shows bullish crossover (MACD line crosses above signal line)
+• Wait for confirmation of trend with multiple indicators
+• Use volume analysis to confirm buying pressure
+
+2. EXIT SIGNALS
+• Sell at supply zones where selling pressure exceeds buying pressure
+• Exit when price crosses below EMAs
+• Look for bearish candlestick patterns (evening star, shooting star) at resistance
+• Sell when RSI reaches overbought levels
+• Exit when MACD shows bearish crossover
+• Take profits at previous resistance levels
+• Exit when volume shows significant selling pressure
+
+3. RISK MANAGEMENT
+• Never risk more than 3-5% of portfolio on a single trade
+• Set stop loss based on technical analysis (previous support levels)
+• Use proper position sizing based on risk tolerance
+• Calculate risk-reward ratio before entering trades
+• Place stop loss orders at invalidation points
+• Consider using trailing stops to protect profits
+• Don't change stop orders due to emotional decisions
+
+4. TIMEFRAME ANALYSIS
+• Use multiple timeframe analysis for confirmation
+• Primary trading timeframes: 1H, 4H, and 1D for spot positions
+• Higher timeframes (4H, 1D) for trend direction
+• Lower timeframes for entry/exit precision
+• Weekly chart for long-term trend analysis
+• Use 200 EMA on daily for long-term trend
+• 13/21 EMA for short-term trends
+
+5. KEY INDICATORS
+• EMAs (13, 21, 50, 200)
+• RSI for overbought/oversold conditions
+• MACD for trend confirmation and momentum
+• Volume for confirmation of moves
+• Supply and Demand zones
+• Support and Resistance levels
+• Candlestick patterns
+
+6. TRADING PRINCIPLES
+• Trade with the trend, not against it
+• Wait for confirmation before entering trades
+• Use multiple confluences for higher probability trades
+• Focus on risk management before profits
+• Be patient for proper setups
+• Don't force trades in unfavorable conditions
+• Always have a clear trading plan before entry
+
+7. MARKET PSYCHOLOGY
+• Markets move based on supply and demand
+• Large players create significant support/resistance levels
+• Price action reflects buyer/seller dominance
+• Volume confirms trend strength
+• Market moves in cycles of accumulation and distribution
+• Fake breakouts often trap retail traders
+• Emotional control is crucial for successful trading
