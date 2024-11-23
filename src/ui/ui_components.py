@@ -151,75 +151,11 @@ def display_realtime_chat(market_data: Dict, analysis_service):
         if 'historical_data' not in st.session_state:
             st.session_state.historical_data = None
 
-        # Add CSS for TradingView-style chat layout
-        st.markdown("""
-        <style>
-        /* Main container adjustments */
-        .main .block-container {
-            padding-bottom: 80px;
-        }
-        
-        /* Chat input overlay styling */
-        section[data-testid="stChatInput"] {
-            position: sticky !important;
-            bottom: 0;
-            background: rgba(19, 23, 34, 0.9) !important;
-            backdrop-filter: blur(10px);
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
-            margin: 0;
-            padding: 1rem 3rem;
-            z-index: 999;
-            box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.3);
-        }
-        
-        section[data-testid="stChatInput"] > div {
-            max-width: 1000px;
-            margin: 0 auto;
-        }
-        
-        section[data-testid="stChatInput"] input {
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            background: rgba(30, 34, 45, 0.9);
-            padding: 0.75rem 1rem;
-            border-radius: 6px;
-        }
-        
-        section[data-testid="stChatInput"] input:focus {
-            border-color: rgba(55, 131, 255, 0.6);
-            box-shadow: 0 0 0 1px rgba(55, 131, 255, 0.3);
-        }
-        
-        /* Chat messages styling */
-        .stChatMessage {
-            background: rgba(30, 34, 45, 0.5);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 8px;
-            padding: 1rem;
-            margin-bottom: 1rem;
-            backdrop-filter: blur(5px);
-        }
-        
-        .stChatMessage:hover {
-            background: rgba(30, 34, 45, 0.7);
-        }
-        
-        /* Main content wrapper */
-        .main-content {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 1rem 0;
-        }
-        
-        /* Ensure proper spacing */
-        .element-container {
-            margin-bottom: 1rem;
-        }
-        
-        .stMarkdown {
-            margin-bottom: 0.5rem;
-        }
-        </style>
-        """, unsafe_allow_html=True)
+        # Get symbol from market data
+        if 'symbol' in market_data.columns:
+            symbol = market_data['symbol'].iloc[0]
+        else:
+            symbol = market_data.index.get_level_values('symbol')[0] if 'symbol' in market_data.index.names else "BTCUSDT"
 
         # Create market context string with improved formatting
         mark_price = float(market_data['mark_price'].iloc[-1])
@@ -235,81 +171,64 @@ Current Market Data:
 - Funding Rate: {funding_rate:.4f}%
 - 24h Volume: {format_price(volume)}
 """
-        # Get symbol from market data
-        if 'symbol' in market_data.columns:
-            symbol = market_data['symbol'].iloc[0]
-        else:
-            symbol = market_data.index.get_level_values('symbol')[0] if 'symbol' in market_data.index.names else "BTCUSDT"
-
-        # Main container for the entire interface
-        main_container = st.container()
+        # Display chat interface with mode indicator
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.subheader("💬 Trading Assistant")
+        with col2:
+            if st.session_state.analysis_mode == "historical":
+                st.info("📈 Historical Analysis Mode (1 Year)", icon="📊")
         
-        with main_container:
-            # Display chat interface with mode indicator
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                st.subheader("💬 Trading Assistant")
-            with col2:
-                if st.session_state.analysis_mode == "historical":
-                    st.info("📈 Historical Analysis Mode (1 Year)", icon="📊")
-            
-            # Wrap main content in a div for styling
-            st.markdown('<div class="main-content">', unsafe_allow_html=True)
-            
-            # Display chat history
-            chat_container = st.container()
-            with chat_container:
-                for message in st.session_state.chat_history:
-                    with st.chat_message(message["role"]):
-                        st.markdown(message["content"])
-            
-            st.markdown('</div>', unsafe_allow_html=True)
+        # Display chat history
+        for message in st.session_state.chat_history:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
 
-            # Chat input with TradingView-style
-            if prompt := st.chat_input("Ask about market conditions or trading strategies..."):
-                # Check for historical analysis keywords
-                historical_keywords = ['historical', 'history', 'past', 'previous', 'performance', 'backtest']
-                is_historical = any(keyword in prompt.lower() for keyword in historical_keywords)
-                
-                # Update analysis mode and fetch historical data if needed
-                if is_historical:
-                    st.session_state.analysis_mode = "historical"
-                    # Get 1 year of historical data
-                    end_date = datetime.now()
-                    start_date = end_date - timedelta(days=365)
-                    st.session_state.historical_data = analysis_service.client.get_market_data(
-                        symbol=symbol,
-                        interval='1d'
-                    )
-                else:
-                    st.session_state.analysis_mode = "real-time"
-                    st.session_state.historical_data = None
-                
-                # Add user message to chat history
-                st.session_state.chat_history.append({"role": "user", "content": prompt})
-                
-                # Display user message
-                with st.chat_message("user"):
-                    st.markdown(prompt)
+        # Chat input - Streamlit will automatically keep it fixed at the bottom
+        if prompt := st.chat_input("Ask about market conditions or trading strategies..."):
+            # Check for historical analysis keywords
+            historical_keywords = ['historical', 'history', 'past', 'previous', 'performance', 'backtest']
+            is_historical = any(keyword in prompt.lower() for keyword in historical_keywords)
+            
+            # Update analysis mode and fetch historical data if needed
+            if is_historical:
+                st.session_state.analysis_mode = "historical"
+                # Get 1 year of historical data
+                end_date = datetime.now()
+                start_date = end_date - timedelta(days=365)
+                st.session_state.historical_data = analysis_service.client.get_market_data(
+                    symbol=symbol,
+                    interval='1d'
+                )
+            else:
+                st.session_state.analysis_mode = "real-time"
+                st.session_state.historical_data = None
+            
+            # Add user message to chat history
+            st.session_state.chat_history.append({"role": "user", "content": prompt})
+            
+            # Display user message
+            with st.chat_message("user"):
+                st.markdown(prompt)
 
-                # Prepare AI context with market data
-                ai_context = market_context
+            # Prepare AI context with market data
+            ai_context = market_context
+            
+            # Add order book context if available
+            if 'order_book_data' in st.session_state and st.session_state.order_book_data:
+                ai_context += format_order_book_context(st.session_state.order_book_data)
+            
+            # Add historical context if in historical mode
+            if st.session_state.analysis_mode == "historical" and st.session_state.historical_data is not None:
+                # Calculate key metrics from historical data
+                hist_data = st.session_state.historical_data
+                year_high = float(hist_data['high'].max())
+                year_low = float(hist_data['low'].min())
+                year_open = float(hist_data['open'].iloc[0])
+                year_close = float(hist_data['close'].iloc[-1])
+                year_change = ((year_close - year_open) / year_open) * 100
                 
-                # Add order book context if available
-                if 'order_book_data' in st.session_state and st.session_state.order_book_data:
-                    ai_context += format_order_book_context(st.session_state.order_book_data)
-                
-                # Add historical context if in historical mode
-                if st.session_state.analysis_mode == "historical" and st.session_state.historical_data is not None:
-                    # Calculate key metrics from historical data
-                    hist_data = st.session_state.historical_data
-                    year_high = float(hist_data['high'].max())
-                    year_low = float(hist_data['low'].min())
-                    year_open = float(hist_data['open'].iloc[0])
-                    year_close = float(hist_data['close'].iloc[-1])
-                    year_change = ((year_close - year_open) / year_open) * 100
-                    
-                    historical_context = f"""
+                historical_context = f"""
 Historical Data Analysis (1 Year):
 - Yearly High: {format_price(year_high)}
 - Yearly Low: {format_price(year_low)}
@@ -317,34 +236,34 @@ Historical Data Analysis (1 Year):
 - Year Close: {format_price(year_close)}
 - Year Change: {year_change:.2f}%
 """
-                    ai_context = f"{historical_context}\n{market_context}"
+                ai_context = f"{historical_context}\n{market_context}"
+            
+            ai_context += f"\nUser Question: {prompt}"
+            
+            # Get AI response with loading indicator
+            try:
+                with st.spinner("🤖 AI is analyzing the market..."):
+                    response = analysis_service.chat(
+                        messages=[{"role": "user", "content": ai_context}],
+                        system_prompt="""You are a real-time trading assistant with access to current market data. 
+                        Analyze the provided market context and answer questions about trading opportunities, 
+                        market conditions, and potential strategies. Be precise and data-driven in your responses.
+                        Always reference Mark Price as the primary price indicator for your analysis.
+                        When order book data is available, use it to identify key support/resistance levels,
+                        market depth, and potential price action based on buy/sell walls and liquidity zones."""
+                    )
                 
-                ai_context += f"\nUser Question: {prompt}"
+                # Add AI response to chat history
+                st.session_state.chat_history.append({"role": "assistant", "content": response})
                 
-                # Get AI response with loading indicator
-                try:
-                    with st.spinner("🤖 AI is analyzing the market..."):
-                        response = analysis_service.chat(
-                            messages=[{"role": "user", "content": ai_context}],
-                            system_prompt="""You are a real-time trading assistant with access to current market data. 
-                            Analyze the provided market context and answer questions about trading opportunities, 
-                            market conditions, and potential strategies. Be precise and data-driven in your responses.
-                            Always reference Mark Price as the primary price indicator for your analysis.
-                            When order book data is available, use it to identify key support/resistance levels,
-                            market depth, and potential price action based on buy/sell walls and liquidity zones."""
-                        )
-                    
-                    # Add AI response to chat history
-                    st.session_state.chat_history.append({"role": "assistant", "content": response})
-                    
-                    # Display AI response
-                    with st.chat_message("assistant"):
-                        st.markdown(response)
-                    
-                except Exception as e:
-                    st.error(f"Error getting AI response: {str(e)}")
-                    import traceback
-                    print(traceback.format_exc())
+                # Display AI response
+                with st.chat_message("assistant"):
+                    st.markdown(response)
+                
+            except Exception as e:
+                st.error(f"Error getting AI response: {str(e)}")
+                import traceback
+                print(traceback.format_exc())
 
     except Exception as e:
         st.error(f"Error in real-time chat: {str(e)}")
