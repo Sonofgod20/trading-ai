@@ -29,7 +29,23 @@ class MongoDBClient:
         """
         try:
             uri = self.uri.replace("<db_password>", db_password)
-            self.client = MongoClient(uri, server_api=ServerApi('1'))
+            
+            # Detectar si estamos en Streamlit Cloud
+            is_streamlit_cloud = os.environ.get('STREAMLIT_SHARING') == 'true'
+            
+            if is_streamlit_cloud:
+                # Configuración específica para Streamlit Cloud
+                self.client = MongoClient(
+                    uri,
+                    server_api=ServerApi('1'),
+                    tls=True,
+                    tlsAllowInvalidCertificates=True,
+                    connectTimeoutMS=30000,
+                    socketTimeoutMS=30000
+                )
+            else:
+                # Configuración para entorno local
+                self.client = MongoClient(uri, server_api=ServerApi('1'))
             
             # Verificar conexión
             self.client.admin.command('ping')
